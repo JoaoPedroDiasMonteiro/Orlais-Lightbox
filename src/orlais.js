@@ -7,40 +7,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const LIGHTBOX = document.getElementById('orlais')
         const IMGWRAPPER = document.getElementById('orlaisImgWrapper')
-        let currentImage 
+        let currentImage
         let currentWrapper
         let touchtime = 0
         let isMove
         let isClick = false
         let startClickX
         let currentClickX
+        let startClickY
+        let currentClickY
+        let zoomTransformX = 0
+        let zoomTransformY = 0
+
 
         // set variables
-        LIGHTBOX.addEventListener('mousedown', e => { startClickX = e.clientX; isClick = true; isMove = false; })
-        LIGHTBOX.addEventListener('mouseup', e => { currentClickX = e.clientX; isClick = false; })
-        LIGHTBOX.addEventListener('mousemove', e => { currentClickX = e.clientX; isMove = true })
+        LIGHTBOX.addEventListener('mousedown', e => { startClickX = e.clientX; isClick = true; isMove = false; startClickY = e.clientY })
+        LIGHTBOX.addEventListener('mouseup', e => { currentClickX = e.clientX; isClick = false; currentClickY = e.clientY; })
+        LIGHTBOX.addEventListener('mousemove', e => { currentClickX = e.clientX; isMove = true; currentClickY = e.clientY; })
         // touch variables
-        LIGHTBOX.addEventListener('touchstart', e => { startClickX = e.touches[0].clientX; isClick = true; isMove = false })
-        LIGHTBOX.addEventListener('touchend', e => { isClick = false; currentClickX = e.changedTouches[0].clientX })
-        LIGHTBOX.addEventListener('touchmove', e => { currentClickX = e.touches[0].clientX; isMove = true })
+        LIGHTBOX.addEventListener('touchstart', e => { startClickX = e.touches[0].clientX; isClick = true; isMove = false; startClickY = e.touches[0].clientY; }, { passive: true })
+        LIGHTBOX.addEventListener('touchend', e => { isClick = false; currentClickX = e.changedTouches[0].clientX; currentClickY = e.changedTouches[0].clientY })
+        LIGHTBOX.addEventListener('touchmove', e => { currentClickX = e.touches[0].clientX; isMove = true; currentClickY = e.touches[0].clientY; }, { passive: true })
 
         // add event to open lightbox
         const orlaisOpenActivator = document.getElementsByClassName('orlais-activator')
         for(element of orlaisOpenActivator) {
             element.addEventListener('click', () => {orlaisOnDbClick(orlaisOpen)})
         }
-        
+
 
         // add events to next and prev functions
         document.getElementById('orlais-next').onclick = orlaisNext
         document.getElementById('orlais-prev').onclick = orlaisPrev
         // on move prev and next
-        window.ontouchend = orlaisActivateNextOrPrev
-        window.onmouseup = orlaisActivateNextOrPrev
+        window.addEventListener('touchend', () => { orlaisActivateNextOrPrev() })
+        window.addEventListener('mouseup', () => { orlaisActivateNextOrPrev() })
 
         // add drag img event
-        LIGHTBOX.onmousemove = orlaisDragImg
-        LIGHTBOX.ontouchmove = orlaisDragImg
+        LIGHTBOX.addEventListener('touchmove', () => orlaisDragImg(), { passive: true })
+        LIGHTBOX.addEventListener('mousemove', () => orlaisDragImg())
+
+        // add zoom
+        IMGWRAPPER.onclick = () => orlaisZoom()
+        IMGWRAPPER.addEventListener('touchmove', () => orlaisZoomDrag(), { passive: true })
+        IMGWRAPPER.addEventListener('mousemove', () => orlaisZoomDrag())
 
         // check click of mouse to deny function close on mouse move
         LIGHTBOX.addEventListener('mouseup', e => {
@@ -103,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        function orlaisNext() {
+        function orlaisNext() {                
             let nextWrapper, nextImg
 
             if (currentWrapper.nextElementSibling != null) {
@@ -124,13 +134,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             LIGHTBOX.querySelector('img').remove()
             IMGWRAPPER.appendChild(nextImg)
+            // reset styles
             IMGWRAPPER.style.transform = 'translateX(0px)'
+            IMGWRAPPER.classList.remove('orlaisZoomOut')
+            IMGWRAPPER.classList.remove('orlaisZoom')
         }
 
         function orlaisPrev() {
             let prevWrapper, prevImg
-            
-            console.log(currentWrapper);
+
             if (currentWrapper.previousElementSibling != null) {
                 prevWrapper = currentWrapper.previousElementSibling
                 prevImg = prevWrapper.querySelector('img')
@@ -149,7 +161,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             LIGHTBOX.querySelector('img').remove()
             IMGWRAPPER.appendChild(prevImg)
+            // reset styles
             IMGWRAPPER.style.transform = 'translateX(0px)'
+            IMGWRAPPER.classList.remove('orlaisZoomOut')
+            IMGWRAPPER.classList.remove('orlaisZoom')
         }
 
         function orlaisOnDbClick(callback) {
@@ -170,6 +185,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function orlaisDragImg() {
+            // verify if zoom is active
+            if (IMGWRAPPER.classList.contains('orlaisZoom'))
+                return
+
             let event = window.event
             let x
             typeof event.touches != 'undefined' ? x = event.touches[0].clientX : x = event.clientX
@@ -181,13 +200,76 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        function orlaisZoomDrag() {            
+            // verify if zoom is not active
+            if (!IMGWRAPPER.classList.contains('orlaisZoom'))
+                return
+
+            let event = window.event
+            let x, y
+
+            // set x, y values 
+            if (typeof event.touches != 'undefined') {
+                x = event.touches[0].clientX
+                y = event.touches[0].clientY
+            } else {
+                x = event.clientX
+                y = event.clientY
+            }
+
+            let imgWrapperTransformData = new WebKitCSSMatrix(IMGWRAPPER.style.transform)
+
+            // set previous image transform X and Y
+            LIGHTBOX.addEventListener('mouseup', () => {
+                zoomTransformX = imgWrapperTransformData.e
+                zoomTransformY = imgWrapperTransformData.f
+            })
+            LIGHTBOX.addEventListener('touchend', () => {
+                zoomTransformX = imgWrapperTransformData.e
+                zoomTransformY = imgWrapperTransformData.f
+            })
+
+            let calcX = zoomTransformX + (x - startClickX)
+            let calcY = zoomTransformY + (y - startClickY)
+
+            if (isClick == true) {
+                IMGWRAPPER.style.transform = `translate(${calcX}px, ${calcY}px)`
+            }
+
+        }
+
         function orlaisActivateNextOrPrev() {
+            // verify if zoom is active
+            if (IMGWRAPPER.classList.contains('orlaisZoom'))
+               return
+            
+            // call functions next or prev
             if ((startClickX - currentClickX) >= 75) {
                 orlaisNext()
             } else if ((startClickX - currentClickX) <= -75) {
                 orlaisPrev()
             }
             isClick = false
+        }
+
+        function orlaisZoom() {
+            // toggle
+            if (IMGWRAPPER.zoom != true) {
+                orlaisOnDbClick(() => {
+                    IMGWRAPPER.classList.add('orlaisZoom')
+                    IMGWRAPPER.classList.remove('orlaisZoomOut')
+                    zoomTransformX = 0
+                    zoomTransformY = 0
+                    IMGWRAPPER.zoom = true
+                })
+            } else {
+                orlaisOnDbClick(() => {
+                    IMGWRAPPER.classList.add('orlaisZoomOut')
+                    IMGWRAPPER.classList.remove('orlaisZoom')
+                    IMGWRAPPER.style.transform = 'translate(0px, 0px)'
+                    IMGWRAPPER.zoom = false
+                })
+            }
         }
 
     }
